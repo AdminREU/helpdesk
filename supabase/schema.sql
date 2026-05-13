@@ -176,9 +176,18 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- Política pública de lectura para el bucket
-INSERT INTO storage.policies (name, bucket_id, definition)
-VALUES (
-  'evidencias_public_read',
-  'evidencias',
-  '{"operation":"SELECT","check":null,"using":"true"}'
-) ON CONFLICT DO NOTHING;
+DROP POLICY IF EXISTS "evidencias_public_read"  ON storage.objects;
+DROP POLICY IF EXISTS "evidencias_auth_insert"  ON storage.objects;
+DROP POLICY IF EXISTS "evidencias_auth_delete"  ON storage.objects;
+
+CREATE POLICY "evidencias_public_read"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'evidencias');
+
+CREATE POLICY "evidencias_auth_insert"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'evidencias');
+
+CREATE POLICY "evidencias_auth_delete"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'evidencias');
