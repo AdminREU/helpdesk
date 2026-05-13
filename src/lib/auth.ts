@@ -45,13 +45,30 @@ export async function verifyOtp(email: string, code: string) {
   return createSession(normalized)
 }
 
+function getAdminEmails(): string[] {
+  try {
+    const raw = process.env.ADMIN_EMAILS ?? '[]'
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.map((e: string) => e.toLowerCase().trim()) : []
+  } catch {
+    return []
+  }
+}
+
 export async function createSession(email: string) {
+  const adminEmails = getAdminEmails()
+  const shouldBeAdmin = adminEmails.includes(email.toLowerCase().trim())
+
   let { data: user } = await supabase.from('users').select('*').eq('email', email).single()
 
   if (!user) {
     const { data: newUser } = await supabase.from('users')
-      .insert({ email, rol: 'USUARIO', estado: 'ACTIVO' }).select().single()
+      .insert({ email, rol: shouldBeAdmin ? 'ADMIN' : 'USUARIO', estado: 'ACTIVO' }).select().single()
     user = newUser
+  } else if (shouldBeAdmin && user.rol !== 'ADMIN') {
+    const { data: updated } = await supabase.from('users')
+      .update({ rol: 'ADMIN' }).eq('email', email).select().single()
+    user = updated ?? user
   }
 
   if (!user) throw new Error('Error al crear usuario')
