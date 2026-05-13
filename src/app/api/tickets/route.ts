@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     const cfg = Object.fromEntries((settings ?? []).map((s: any) => [s.key, s.value]))
     const pad = parseInt(cfg['TICKET_PAD'] ?? '4')
     const seq = parseInt(cfg['TICKET_SEQ'] ?? '0') + 1
-    await supabase.from('settings').upsert({ key: 'TICKET_SEQ', value: String(seq) })
+    await supabase.from('settings').upsert({ key: 'TICKET_SEQ', value: String(seq) }, { onConflict: 'key' })
     const ticketId = `Ticket-${String(seq).padStart(pad, '0')}`
     const usuarioEmail = rol !== 'USUARIO' && body.usuario_email ? body.usuario_email : email
 

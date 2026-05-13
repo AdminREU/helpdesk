@@ -7,7 +7,8 @@ export async function PATCH(req: Request) {
     const { rol } = await validateToken(getToken(req))
     requireRoles(rol, ['ADMIN'])
     const { key, value } = await req.json()
-    await supabase.from('catalogs').upsert({ key, value })
+    const { error } = await supabase.from('catalogs').upsert({ key, value }, { onConflict: 'key' })
+    if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true })
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 400 }) }
 }

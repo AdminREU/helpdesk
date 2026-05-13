@@ -7,6 +7,8 @@ type View='dashboard'|'kanban'|'tickets'|'users'|'kb'|'config'|'detail'
 interface CatSubcategoria{label:string;peticiones:string[]}
 interface CatCategoria{label:string;subcategorias:CatSubcategoria[]}
 interface MotivoCierre{key:string;label:string;color:string}
+interface AgentStatus{key:string;label:string;color?:string;level?:string}
+interface Agent{email:string;nombre:string;agent_status:string;agent_status_detail?:string;agent_status_updated_at?:string;ultimo_acceso?:string}
 interface Ticket{id:string;usuario_email:string;area:string;asunto:string;descripcion:string;estado:string;prioridad:string;tecnico_asignado:string;fecha_creacion:string;fecha_actualizacion:string;respuesta_tecnico:string;categoria:string;subcategoria:string;servicio:string;updated_by_user:boolean;rating:number;evidencias_json:any[];motivo_cierre:string}
 interface User{id:string;email:string;nombre:string;rol:string;estado:string;agent_status:string;ultimo_acceso:string}
 interface KbItem{id:string;titulo:string;categoria:string;contenido:string;activo:boolean;autor:string}
@@ -26,7 +28,11 @@ export default function HelpdeskPage(){
   const [userEmail,setUserEmail]=useState('')
   const [userRol,setUserRol]=useState('')
   const [agentStatus,setAgentStatusState]=useState('disponible')
-  const [agentStatuses,setAgentStatuses]=useState([{key:'disponible',label:'🟢 Disponible'},{key:'ocupado',label:'🟡 Ocupado'},{key:'ausente',label:'⚪ Ausente'}])
+  const [agentDetail,setAgentDetail]=useState('')
+  const [agentDetailDirty,setAgentDetailDirty]=useState(false)
+  const [agents,setAgents]=useState<Agent[]>([])
+  const [selectedAgent,setSelectedAgent]=useState<Agent|null>(null)
+  const [agentStatuses,setAgentStatuses]=useState<AgentStatus[]>([{key:'disponible',label:'Disponible',color:'#10b981',level:'INFO'},{key:'ocupado',label:'Ocupado',color:'#f59e0b',level:'MEDIA'},{key:'ausente',label:'Ausente',color:'#6b7280',level:'BAJA'}])
   const [stats,setStats]=useState({total:0,abiertos:0,en_proceso:0,resueltos:0,cerrados:0,sin_asignar:0})
   const [statsByArea,setStatsByArea]=useState<{area:string;count:number}[]>([])
   const [statsByEstado,setStatsByEstado]=useState<{estado:string;count:number;color:string}[]>([])
@@ -57,6 +63,8 @@ export default function HelpdeskPage(){
   const [uploadingFile,setUploadingFile]=useState(false)
   const [newStatusKey,setNewStatusKey]=useState('')
   const [newStatusLabel,setNewStatusLabel]=useState('')
+  const [newStatusColor,setNewStatusColor]=useState('#6b7280')
+  const [newStatusLevel,setNewStatusLevel]=useState('INFO')
   const [clearOtpEmail,setClearOtpEmail]=useState('')
   const [catAreas,setCatAreas]=useState<string[]>([])
   const [catAlmacenes,setCatAlmacenes]=useState<string[]>([])
@@ -96,7 +104,8 @@ export default function HelpdeskPage(){
       }).catch(()=>router.push('/login'))
   },[])
 
-  useEffect(()=>{if(token){loadDashboard();loadCatalogs();loadFeatures();loadUsers()}},[token])
+  useEffect(()=>{if(token){loadDashboard();loadCatalogs();loadFeatures();loadUsers();loadMyAgentInfo();loadAgents()}},[token])
+  useEffect(()=>{if(!token)return;const t=setInterval(loadAgents,30000);return()=>clearInterval(t)},[token])
 
   const api=useCallback(async(path:string,method='GET',body?:any)=>{
     const res=await fetch(path,{method,headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
@@ -211,12 +220,45 @@ export default function HelpdeskPage(){
   }
   async function toggleKb(id:string,active:boolean){await api(`/api/kb/${id}/toggle`,'PATCH',{active:!active});loadKb()}
   async function toggleFlag(key:string){await api('/api/settings','PATCH',{key,value:String(features[key]!=='true')});loadFeatures()}
-  async function setAgentStatus(status:string){await api('/api/users/agent-status','PATCH',{status});setAgentStatusState(status)}
+  async function setAgentStatus(status:string){
+    await api('/api/users/agent-status','PATCH',{status})
+    setAgentStatusState(status)
+    loadAgents()
+  }
+  async function saveAgentDetail(){
+    await api('/api/users/agent-status','PATCH',{detail:agentDetail})
+    setAgentDetailDirty(false)
+    showMsg('Detalle actualizado','ok')
+    loadAgents()
+  }
+  async function loadAgents(){
+    const r=await api('/api/users/agent-status')
+    if(r.ok)setAgents((r.agents??[]).filter((a:Agent)=>a.email!==userEmail))
+  }
+  async function loadMyAgentInfo(){
+    const r=await api('/api/users/me')
+    if(r.ok&&r.user){
+      setAgentStatusState(r.user.agent_status??'disponible')
+      setAgentDetail(r.user.agent_status_detail??'')
+    }
+  }
+  function getStatusInfo(key:string):AgentStatus{
+    return agentStatuses.find(s=>s.key===key)??{key,label:key,color:'#6b7280',level:'INFO'}
+  }
   async function saveCat(key:string,value:any){const res=await api('/api/catalogs/update','PATCH',{key,value});if(res.ok)showMsg('Guardado','ok');else showMsg('Error','err');loadCatalogs()}
   async function addToArr(key:string,item:string,arr:string[],setter:any,inputSetter:any){if(!item.trim())return;const u=[...arr,item.trim()];await saveCat(key,u);setter(u);inputSetter('')}
   async function removeFromArr(key:string,item:string,arr:string[],setter:any){const u=arr.filter(x=>x!==item);await saveCat(key,u);setter(u)}
-  async function addAgentStatus(){if(!newStatusKey||!newStatusLabel)return;const u=[...agentStatuses,{key:newStatusKey,label:newStatusLabel}];await saveCat('agent_statuses',u);setAgentStatuses(u);setNewStatusKey('');setNewStatusLabel('')}
-  async function removeAgentStatus(key:string){if(['disponible','ocupado','ausente'].includes(key))return;const u=agentStatuses.filter(s=>s.key!==key);await saveCat('agent_statuses',u);setAgentStatuses(u)}
+  async function addAgentStatus(){
+    if(!newStatusKey||!newStatusLabel)return
+    const u=[...agentStatuses,{key:newStatusKey,label:newStatusLabel,color:newStatusColor,level:newStatusLevel}]
+    await saveCat('agent_statuses',u);setAgentStatuses(u)
+    setNewStatusKey('');setNewStatusLabel('');setNewStatusColor('#6b7280');setNewStatusLevel('INFO')
+  }
+  async function removeAgentStatus(key:string){
+    if(key==='disponible')return
+    const u=agentStatuses.filter(s=>s.key!==key)
+    await saveCat('agent_statuses',u);setAgentStatuses(u)
+  }
   async function addMotivoCierre(){if(!newMotivo.key||!newMotivo.label)return;const u=[...motivosCierre,{...newMotivo}];await saveCat('motivos_cierre',u);setMotivosCierre(u);setNewMotivo({key:'',label:'',color:'#6b7280'})}
   async function removeMotivoCierre(key:string){const u=motivosCierre.filter(m=>m.key!==key);await saveCat('motivos_cierre',u);setMotivosCierre(u)}
   async function addCat(){if(!newCatLabel.trim())return;const u=[...catCascada,{label:newCatLabel.trim(),subcategorias:[]}];await saveCat('categorias_cascada',u);setCatCascada(u);setNewCatLabel('')}
@@ -258,11 +300,36 @@ export default function HelpdeskPage(){
             </div>
           ))}
         </nav>
+        {/* Equipo en línea */}
+        {agents.length>0&&<div style={{padding:'10px 16px',borderTop:`1px solid ${border}`}}>
+          <div style={{fontSize:'10px',color:muted,marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px',fontWeight:600}}>Equipo · {agents.length}</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'4px',maxHeight:'140px',overflowY:'auto'}}>
+            {agents.slice(0,8).map(a=>{
+              const s=getStatusInfo(a.agent_status)
+              return<div key={a.email} onClick={()=>setSelectedAgent(a)} style={{display:'flex',alignItems:'center',gap:'8px',padding:'5px 8px',borderRadius:'6px',cursor:'pointer',transition:'background 0.15s'}} onMouseEnter={e=>e.currentTarget.style.background=hover} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <div style={{width:'8px',height:'8px',borderRadius:'50%',background:s.color,flexShrink:0,boxShadow:`0 0 0 2px ${s.color}33`}}/>
+                <span style={{fontSize:'12px',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:text}}>{a.nombre||a.email.split('@')[0]}</span>
+                {a.agent_status_detail&&<span style={{fontSize:'9px',color:muted,opacity:0.6}}>···</span>}
+              </div>
+            })}
+          </div>
+        </div>}
+
+        {/* Mi estado */}
         <div style={{padding:'12px 16px',borderTop:`1px solid ${border}`}}>
-          <div style={{fontSize:'11px',color:muted,marginBottom:'6px'}}>Estado del agente</div>
-          <select value={agentStatus} onChange={e=>setAgentStatus(e.target.value)} style={{...inp,marginBottom:'10px',fontSize:'12px'}}>
-            {agentStatuses.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
+          <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
+            <div style={{width:'10px',height:'10px',borderRadius:'50%',background:getStatusInfo(agentStatus).color,flexShrink:0,boxShadow:`0 0 0 3px ${getStatusInfo(agentStatus).color}33`}}/>
+            <select value={agentStatus} onChange={e=>setAgentStatus(e.target.value)} style={{...inp,flex:1,fontSize:'12px',padding:'6px 8px'}}>
+              {agentStatuses.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
+          <textarea
+            value={agentDetail}
+            onChange={e=>{setAgentDetail(e.target.value);setAgentDetailDirty(true)}}
+            onBlur={()=>{if(agentDetailDirty)saveAgentDetail()}}
+            placeholder="¿En qué estás trabajando?"
+            style={{...inp,minHeight:'42px',fontSize:'11px',resize:'none',padding:'6px 8px',lineHeight:1.4,marginBottom:'8px'}}
+          />
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             <div style={{fontSize:'11px',color:muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'140px'}}>{userEmail}</div>
             <button onClick={toggleTheme} style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',opacity:0.6}}>{d?'☀️':'🌙'}</button>
@@ -594,6 +661,30 @@ export default function HelpdeskPage(){
           </div>
         </div>}
 
+        {/* Modal de detalle de agente */}
+        {selectedAgent&&<div onClick={()=>setSelectedAgent(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(4px)'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:surface,borderRadius:'14px',padding:'24px',width:'380px',maxWidth:'90vw',border:`1px solid ${border}`,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'14px'}}>
+              <div style={{width:'40px',height:'40px',borderRadius:'50%',background:getStatusInfo(selectedAgent.agent_status).color+'22',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',fontWeight:600,color:getStatusInfo(selectedAgent.agent_status).color}}>{(selectedAgent.nombre||selectedAgent.email)[0].toUpperCase()}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:'14px',fontWeight:600}}>{selectedAgent.nombre||selectedAgent.email.split('@')[0]}</div>
+                <div style={{fontSize:'11px',color:muted}}>{selectedAgent.email}</div>
+              </div>
+              <button onClick={()=>setSelectedAgent(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:'20px',color:muted,lineHeight:1}}>×</button>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'10px 12px',borderRadius:'8px',background:getStatusInfo(selectedAgent.agent_status).color+'15',marginBottom:'12px'}}>
+              <div style={{width:'10px',height:'10px',borderRadius:'50%',background:getStatusInfo(selectedAgent.agent_status).color}}/>
+              <span style={{fontSize:'13px',fontWeight:500,color:getStatusInfo(selectedAgent.agent_status).color}}>{getStatusInfo(selectedAgent.agent_status).label}</span>
+              {getStatusInfo(selectedAgent.agent_status).level&&<span style={{fontSize:'10px',padding:'2px 6px',borderRadius:'4px',background:getStatusInfo(selectedAgent.agent_status).color+'30',color:getStatusInfo(selectedAgent.agent_status).color,marginLeft:'auto'}}>{getStatusInfo(selectedAgent.agent_status).level}</span>}
+            </div>
+            {selectedAgent.agent_status_detail
+              ?<div style={{padding:'14px',borderRadius:'8px',background:d?'#2f2f2f':'#f7f6f3',fontSize:'13px',lineHeight:1.5,whiteSpace:'pre-wrap',color:text}}>{selectedAgent.agent_status_detail}</div>
+              :<div style={{padding:'14px',borderRadius:'8px',background:d?'#2f2f2f':'#f7f6f3',fontSize:'12px',color:muted,fontStyle:'italic',textAlign:'center'}}>Sin detalle</div>
+            }
+            {selectedAgent.agent_status_updated_at&&<div style={{fontSize:'10px',color:muted,marginTop:'10px',textAlign:'right'}}>Actualizado {fmtDate(selectedAgent.agent_status_updated_at)}</div>}
+          </div>
+        </div>}
+
         {/* CONFIG */}
         {view==='config'&&<div>
           <div style={{fontSize:'18px',fontWeight:600,marginBottom:'20px'}}>Configuración</div>
@@ -612,14 +703,22 @@ export default function HelpdeskPage(){
             <div style={{background:surface,border:`1px solid ${border}`,borderRadius:'10px',padding:'20px'}}>
               <div style={{fontSize:'13px',fontWeight:500,marginBottom:'14px'}}>Estados del agente</div>
               {agentStatuses.map(s=>(
-                <div key={s.key} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:`1px solid ${border}`}}>
-                  <span style={{fontSize:'13px'}}>{s.label}</span>
-                  {!['disponible','ocupado','ausente'].includes(s.key)&&<button style={{...btnDanger,padding:'3px 10px',fontSize:'11px'}} onClick={()=>removeAgentStatus(s.key)}>Eliminar</button>}
+                <div key={s.key} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:`1px solid ${border}`}}>
+                  <div style={{width:'12px',height:'12px',borderRadius:'50%',background:s.color??'#6b7280',flexShrink:0}}/>
+                  <span style={{fontSize:'13px',flex:1}}>{s.label}</span>
+                  {s.level&&<span style={{fontSize:'10px',color:muted,padding:'2px 6px',borderRadius:'4px',background:d?'#2f2f2f':'#f0efec'}}>{s.level}</span>}
+                  {s.key!=='disponible'&&<button style={{...btnDanger,padding:'3px 10px',fontSize:'11px'}} onClick={()=>removeAgentStatus(s.key)}>×</button>}
                 </div>
               ))}
-              <div style={{marginTop:'12px',display:'flex',gap:'8px',alignItems:'flex-end',flexWrap:'wrap'}}>
-                <div><div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Clave</div><input style={{...inp,width:'100px'}} placeholder="en_campo" value={newStatusKey} onChange={e=>setNewStatusKey(e.target.value.toLowerCase().replace(/\s/g,'_'))}/></div>
-                <div style={{flex:1}}><div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Etiqueta</div><input style={inp} placeholder="🟣 En campo" value={newStatusLabel} onChange={e=>setNewStatusLabel(e.target.value)}/></div>
+              <div style={{marginTop:'12px',display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'flex-end'}}>
+                <div><div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Clave</div><input style={{...inp,width:'90px'}} placeholder="en_campo" value={newStatusKey} onChange={e=>setNewStatusKey(e.target.value.toLowerCase().replace(/\s/g,'_'))}/></div>
+                <div style={{flex:1,minWidth:'120px'}}><div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Etiqueta</div><input style={inp} placeholder="En campo" value={newStatusLabel} onChange={e=>setNewStatusLabel(e.target.value)}/></div>
+                <div><div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Color</div><input type="color" value={newStatusColor} onChange={e=>setNewStatusColor(e.target.value)} style={{width:'40px',height:'34px',border:`1px solid ${border}`,borderRadius:'6px',cursor:'pointer',background:'transparent'}}/></div>
+                <div><div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Nivel</div>
+                  <select style={{...inp,width:'90px'}} value={newStatusLevel} onChange={e=>setNewStatusLevel(e.target.value)}>
+                    <option value="INFO">INFO</option><option value="BAJA">BAJA</option><option value="MEDIA">MEDIA</option><option value="ALTA">ALTA</option><option value="CRITICA">CRÍTICA</option>
+                  </select>
+                </div>
                 <button style={btn} onClick={addAgentStatus}>+</button>
               </div>
             </div>

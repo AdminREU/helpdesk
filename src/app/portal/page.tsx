@@ -10,7 +10,7 @@ interface CatSubcategoria { label: string; peticiones: string[] }
 interface CatCategoria { label: string; subcategorias: CatSubcategoria[] }
 interface Ticket{id:string;asunto:string;descripcion:string;estado:string;prioridad:string;area:string;categoria:string;subcategoria:string;servicio:string;almacen:string;tecnico_asignado:string;fecha_creacion:string;fecha_actualizacion:string;respuesta_tecnico:string;rating:number;updated_by_user:boolean;evidencias_json:any[];motivo_cierre:string}
 interface KbItem{id:string;titulo:string;categoria:string;contenido:string;activo:boolean}
-interface Agent{email:string;nombre:string;agent_status:string}
+interface Agent{email:string;nombre:string;agent_status:string;agent_status_detail?:string;agent_status_updated_at?:string}
 
 const STATE_LABELS:Record<string,string>={abierto:'Abierto',asignado:'En proceso',en_proceso:'En proceso',en_espera_recurso:'En proceso',en_espera_confirmacion:'En proceso',resuelto:'Resuelto',cerrado:'Cerrado'}
 const STATE_COLORS:Record<string,string>={abierto:'#3b82f6',asignado:'#8b5cf6',en_proceso:'#8b5cf6',en_espera_recurso:'#f59e0b',en_espera_confirmacion:'#f97316',resuelto:'#10b981',cerrado:'#6b7280'}
@@ -28,7 +28,8 @@ export default function PortalPage(){
   const [recentTickets,setRecentTickets]=useState<Ticket[]>([])
   const [selectedTicket,setSelectedTicket]=useState<Ticket|null>(null)
   const [agents,setAgents]=useState<Agent[]>([])
-  const [agentMeta,setAgentMeta]=useState<Record<string,{color:string;label:string}>>({disponible:{color:'#10b981',label:'Disponible'},ocupado:{color:'#f59e0b',label:'Ocupado'},ausente:{color:'#6b7280',label:'Ausente'}})
+  const [selectedAgent,setSelectedAgent]=useState<Agent|null>(null)
+  const [agentMeta,setAgentMeta]=useState<Record<string,{color:string;label:string;level?:string}>>({disponible:{color:'#10b981',label:'Disponible'},ocupado:{color:'#f59e0b',label:'Ocupado'},ausente:{color:'#6b7280',label:'Ausente'}})
   const [catalogs,setCatalogs]=useState<Record<string,any>>({})
   const [kbItems,setKbItems]=useState<KbItem[]>([])
   const [kbEnabled,setKbEnabled]=useState(true)
@@ -107,9 +108,9 @@ export default function PortalPage(){
     if(res.ok){
       setCatalogs(res.catalogs??{})
       if(res.catalogs?.agent_statuses){
-        const meta:Record<string,{color:string;label:string}>={};
-        const colorMap:Record<string,string>={disponible:'#10b981',ocupado:'#f59e0b',ausente:'#6b7280',en_reunion:'#3b82f6',almuerzo:'#f97316'}
-        for(const s of res.catalogs.agent_statuses) meta[s.key]={color:colorMap[s.key]??'#6b7280',label:s.label.replace(/^[\p{Emoji}\u200d\s]+/u,'').trim()}
+        const meta:Record<string,{color:string;label:string;level?:string}>={};
+        const fallback:Record<string,string>={disponible:'#10b981',ocupado:'#f59e0b',ausente:'#6b7280'}
+        for(const s of res.catalogs.agent_statuses) meta[s.key]={color:s.color??fallback[s.key]??'#6b7280',label:(s.label??s.key).replace(/^[\p{Emoji}\u200d\s]+/u,'').trim(),level:s.level}
         setAgentMeta(meta)
       }
     }
@@ -200,15 +201,41 @@ export default function PortalPage(){
       <div style={{maxWidth:'860px',margin:'0 auto',padding:'28px 24px'}}>
         {/* HOME */}
         {view==='home'&&<div>
-          {agents.length>0&&<div style={{background:surface,border:`1px solid ${border}`,borderRadius:'10px',padding:'12px 20px',marginBottom:'20px',display:'flex',gap:'20px',alignItems:'center',flexWrap:'wrap'}}>
+          {agents.length>0&&<div style={{background:surface,border:`1px solid ${border}`,borderRadius:'10px',padding:'12px 20px',marginBottom:'20px',display:'flex',gap:'16px',alignItems:'center',flexWrap:'wrap'}}>
             <span style={{fontSize:'12px',color:muted,fontWeight:500}}>Equipo de soporte:</span>
-            {agents.map(a=>{const meta=agentMeta[a.agent_status]??{color:'#6b7280',label:a.agent_status};return(
-              <div key={a.email} style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                <div style={{width:'8px',height:'8px',borderRadius:'50%',background:meta.color}}/>
+            {agents.map(a=>{const meta=agentMeta[a.agent_status]??{color:'#6b7280',label:a.agent_status};const hasDetail=!!a.agent_status_detail;return(
+              <div key={a.email} onClick={()=>hasDetail&&setSelectedAgent(a)} title={hasDetail?'Ver detalle':''} style={{display:'flex',alignItems:'center',gap:'6px',cursor:hasDetail?'pointer':'default',padding:'4px 8px',borderRadius:'6px',transition:'background 0.15s'}} onMouseEnter={e=>hasDetail&&(e.currentTarget.style.background=d?'#2f2f2f':'#f0efec')} onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                <div style={{width:'8px',height:'8px',borderRadius:'50%',background:meta.color,boxShadow:`0 0 0 2px ${meta.color}33`}}/>
                 <span style={{fontSize:'12px',fontWeight:500}}>{a.nombre||a.email.split('@')[0]}</span>
                 <span style={{fontSize:'11px',color:muted}}>({meta.label})</span>
+                {hasDetail&&<span style={{fontSize:'10px',color:meta.color,marginLeft:'2px'}}>›</span>}
               </div>
             )})}
+          </div>}
+
+          {selectedAgent&&<div onClick={()=>setSelectedAgent(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(4px)'}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:surface,borderRadius:'14px',padding:'24px',width:'380px',maxWidth:'90vw',border:`1px solid ${border}`,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+              {(() => {
+                const meta=agentMeta[selectedAgent.agent_status]??{color:'#6b7280',label:selectedAgent.agent_status,level:undefined}
+                return<>
+                  <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'14px'}}>
+                    <div style={{width:'40px',height:'40px',borderRadius:'50%',background:meta.color+'22',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',fontWeight:600,color:meta.color}}>{(selectedAgent.nombre||selectedAgent.email)[0].toUpperCase()}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:'14px',fontWeight:600,color:text}}>{selectedAgent.nombre||selectedAgent.email.split('@')[0]}</div>
+                      <div style={{fontSize:'11px',color:muted}}>{selectedAgent.email}</div>
+                    </div>
+                    <button onClick={()=>setSelectedAgent(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:'20px',color:muted,lineHeight:1}}>×</button>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'10px 12px',borderRadius:'8px',background:meta.color+'15',marginBottom:'12px'}}>
+                    <div style={{width:'10px',height:'10px',borderRadius:'50%',background:meta.color}}/>
+                    <span style={{fontSize:'13px',fontWeight:500,color:meta.color}}>{meta.label}</span>
+                    {meta.level&&<span style={{fontSize:'10px',padding:'2px 6px',borderRadius:'4px',background:meta.color+'30',color:meta.color,marginLeft:'auto'}}>{meta.level}</span>}
+                  </div>
+                  <div style={{padding:'14px',borderRadius:'8px',background:d?'#2f2f2f':'#f7f6f3',fontSize:'13px',lineHeight:1.5,whiteSpace:'pre-wrap',color:text}}>{selectedAgent.agent_status_detail}</div>
+                  {selectedAgent.agent_status_updated_at&&<div style={{fontSize:'10px',color:muted,marginTop:'10px',textAlign:'right'}}>Actualizado {fmtDate(selectedAgent.agent_status_updated_at)}</div>}
+                </>
+              })()}
+            </div>
           </div>}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}}>
             <div style={{fontSize:'18px',fontWeight:600}}>Mis tickets recientes</div>
