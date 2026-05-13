@@ -65,6 +65,12 @@ export default function HelpdeskPage(){
   const [newStatusLabel,setNewStatusLabel]=useState('')
   const [newStatusColor,setNewStatusColor]=useState('#6b7280')
   const [newStatusLevel,setNewStatusLevel]=useState('INFO')
+  const [brandingName,setBrandingName]=useState('Helpdesk')
+  const [brandingLogo,setBrandingLogo]=useState('')
+  const [brandingColor,setBrandingColor]=useState('#3b82f6')
+  const [brandingNameEdit,setBrandingNameEdit]=useState('')
+  const [brandingColorEdit,setBrandingColorEdit]=useState('#3b82f6')
+  const [uploadingLogo,setUploadingLogo]=useState(false)
   const [clearOtpEmail,setClearOtpEmail]=useState('')
   const [catAreas,setCatAreas]=useState<string[]>([])
   const [catAlmacenes,setCatAlmacenes]=useState<string[]>([])
@@ -104,6 +110,7 @@ export default function HelpdeskPage(){
       }).catch(()=>router.push('/login'))
   },[])
 
+  useEffect(()=>{loadBranding()},[])
   useEffect(()=>{if(token){loadDashboard();loadCatalogs();loadFeatures();loadUsers();loadMyAgentInfo();loadAgents()}},[token])
   useEffect(()=>{if(!token)return;const t=setInterval(loadAgents,30000);return()=>clearInterval(t)},[token])
 
@@ -245,6 +252,33 @@ export default function HelpdeskPage(){
   function getStatusInfo(key:string):AgentStatus{
     return agentStatuses.find(s=>s.key===key)??{key,label:key,color:'#6b7280',level:'INFO'}
   }
+  async function loadBranding(){
+    try{
+      const r=await fetch('/api/branding').then(r=>r.json())
+      if(r.ok){setBrandingName(r.name);setBrandingLogo(r.logoUrl);setBrandingColor(r.primaryColor);setBrandingNameEdit(r.name);setBrandingColorEdit(r.primaryColor);if(typeof document!=='undefined')document.title=r.name}
+    }catch{}
+  }
+  async function saveBrandingName(){
+    if(!brandingNameEdit.trim())return
+    await api('/api/settings','PATCH',{key:'APP_NAME',value:brandingNameEdit.trim()})
+    setBrandingName(brandingNameEdit.trim());document.title=brandingNameEdit.trim()
+    showMsg('Nombre actualizado','ok')
+  }
+  async function saveBrandingColor(){
+    await api('/api/settings','PATCH',{key:'APP_PRIMARY_COLOR',value:brandingColorEdit})
+    setBrandingColor(brandingColorEdit);showMsg('Color actualizado','ok')
+  }
+  async function uploadLogo(file:File){
+    setUploadingLogo(true)
+    const fd=new FormData();fd.append('file',file)
+    const r=await fetch('/api/branding/upload',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}).then(r=>r.json())
+    if(r.ok){setBrandingLogo(r.url);showMsg('Logo subido','ok')}else showMsg(`Error: ${r.error}`,'err')
+    setUploadingLogo(false)
+  }
+  async function removeLogo(){
+    await fetch('/api/branding/upload',{method:'DELETE',headers:{'Authorization':`Bearer ${token}`}})
+    setBrandingLogo('');showMsg('Logo eliminado','ok')
+  }
   async function saveCat(key:string,value:any){const res=await api('/api/catalogs/update','PATCH',{key,value});if(res.ok)showMsg('Guardado','ok');else showMsg('Error','err');loadCatalogs()}
   async function addToArr(key:string,item:string,arr:string[],setter:any,inputSetter:any){if(!item.trim())return;const u=[...arr,item.trim()];await saveCat(key,u);setter(u);inputSetter('')}
   async function removeFromArr(key:string,item:string,arr:string[],setter:any){const u=arr.filter(x=>x!==item);await saveCat(key,u);setter(u)}
@@ -289,8 +323,11 @@ export default function HelpdeskPage(){
       <div style={{width:'220px',background:surface,borderRight:`1px solid ${border}`,display:'flex',flexDirection:'column',flexShrink:0}}>
         <div style={{padding:'20px 16px 16px',borderBottom:`1px solid ${border}`}}>
           <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-            <div style={{width:'24px',height:'24px',borderRadius:'6px',background:d?'#fff':'#191919',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:d?'#191919':'#fff'}}>H</div>
-            <span style={{fontSize:'13px',fontWeight:600}}>Helpdesk Ultralam</span>
+            {brandingLogo
+              ?<img src={brandingLogo} alt="logo" style={{width:'28px',height:'28px',borderRadius:'6px',objectFit:'cover'}}/>
+              :<div style={{width:'28px',height:'28px',borderRadius:'6px',background:brandingColor,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff'}}>{brandingName.charAt(0).toUpperCase()}</div>
+            }
+            <span style={{fontSize:'13px',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{brandingName}</span>
           </div>
         </div>
         <nav style={{flex:1,padding:'8px'}}>
@@ -689,6 +726,46 @@ export default function HelpdeskPage(){
         {view==='config'&&<div>
           <div style={{fontSize:'18px',fontWeight:600,marginBottom:'20px'}}>Configuración</div>
           <Msg2/>
+
+          {/* Branding */}
+          <div style={{background:surface,border:`1px solid ${border}`,borderRadius:'10px',padding:'20px',marginBottom:'16px'}}>
+            <div style={{fontSize:'13px',fontWeight:500,marginBottom:'4px'}}>Identidad de la aplicación</div>
+            <div style={{fontSize:'11px',color:muted,marginBottom:'16px'}}>Logo, nombre y color visibles en toda la plataforma</div>
+            <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'20px',alignItems:'start'}}>
+              {/* Logo preview + upload */}
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'8px'}}>
+                {brandingLogo
+                  ?<img src={brandingLogo} alt="logo" style={{width:'80px',height:'80px',borderRadius:'12px',objectFit:'cover',border:`1px solid ${border}`}}/>
+                  :<div style={{width:'80px',height:'80px',borderRadius:'12px',background:brandingColor,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'32px',fontWeight:700,color:'#fff'}}>{brandingName.charAt(0).toUpperCase()}</div>
+                }
+                <label style={{...btnSec,padding:'6px 12px',fontSize:'11px',cursor:'pointer',display:'inline-block'}}>
+                  {uploadingLogo?'Subiendo...':(brandingLogo?'Cambiar':'Subir logo')}
+                  <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)uploadLogo(f);e.target.value=''}}/>
+                </label>
+                {brandingLogo&&<button onClick={removeLogo} style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',fontSize:'11px',padding:0}}>Quitar logo</button>}
+              </div>
+
+              {/* Name + color */}
+              <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+                <div>
+                  <div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Nombre de la aplicación</div>
+                  <div style={{display:'flex',gap:'8px'}}>
+                    <input style={{...inp,flex:1}} value={brandingNameEdit} onChange={e=>setBrandingNameEdit(e.target.value)} placeholder="Helpdesk Ultralam"/>
+                    <button style={btn} onClick={saveBrandingName} disabled={brandingNameEdit.trim()===brandingName}>Guardar</button>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Color principal</div>
+                  <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                    <input type="color" value={brandingColorEdit} onChange={e=>setBrandingColorEdit(e.target.value)} style={{width:'48px',height:'34px',border:`1px solid ${border}`,borderRadius:'6px',cursor:'pointer',background:'transparent'}}/>
+                    <input style={{...inp,flex:1,fontFamily:'monospace'}} value={brandingColorEdit} onChange={e=>setBrandingColorEdit(e.target.value)} placeholder="#3b82f6"/>
+                    <button style={btn} onClick={saveBrandingColor} disabled={brandingColorEdit===brandingColor}>Guardar</button>
+                  </div>
+                </div>
+                <div style={{fontSize:'11px',color:muted,paddingTop:'4px'}}>Tamaño máx. del logo: 2MB. Formatos: PNG, JPG, SVG, WEBP.</div>
+              </div>
+            </div>
+          </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}}>
             <div style={{background:surface,border:`1px solid ${border}`,borderRadius:'10px',padding:'20px'}}>
               <div style={{fontSize:'13px',fontWeight:500,marginBottom:'14px'}}>Notificaciones por email</div>

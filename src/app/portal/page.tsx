@@ -31,6 +31,9 @@ export default function PortalPage(){
   const [selectedAgent,setSelectedAgent]=useState<Agent|null>(null)
   const [agentMeta,setAgentMeta]=useState<Record<string,{color:string;label:string;level?:string}>>({disponible:{color:'#10b981',label:'Disponible'},ocupado:{color:'#f59e0b',label:'Ocupado'},ausente:{color:'#6b7280',label:'Ausente'}})
   const [catalogs,setCatalogs]=useState<Record<string,any>>({})
+  const [brandingName,setBrandingName]=useState('Helpdesk')
+  const [brandingLogo,setBrandingLogo]=useState('')
+  const [brandingColor,setBrandingColor]=useState('#3b82f6')
   const [kbItems,setKbItems]=useState<KbItem[]>([])
   const [kbEnabled,setKbEnabled]=useState(true)
   const [kbSelected,setKbSelected]=useState<KbItem|null>(null)
@@ -73,7 +76,12 @@ export default function PortalPage(){
       }).catch(()=>router.push('/login'))
   },[])
 
-  useEffect(()=>{if(!token)return;loadHome();loadCatalogs();loadAgents();loadKb()},[token])
+  useEffect(()=>{
+    fetch('/api/branding').then(r=>r.json()).then(b=>{
+      if(b.ok){setBrandingName(b.name);setBrandingLogo(b.logoUrl);setBrandingColor(b.primaryColor);document.title=b.name}
+    }).catch(()=>{})
+  },[])
+  useEffect(()=>{if(!token)return;loadHome();loadCatalogs();loadAgents();loadKb();const t=setInterval(loadAgents,30000);return()=>clearInterval(t)},[token])
 
   // Pegar capturas
   useEffect(()=>{
@@ -185,8 +193,11 @@ export default function PortalPage(){
     <div style={{minHeight:'100vh',background:bg,fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',color:text}}>
       <div style={{background:surface,borderBottom:`1px solid ${border}`,padding:'0 24px',display:'flex',alignItems:'center',height:'52px',position:'sticky',top:0,zIndex:10}}>
         <div style={{display:'flex',alignItems:'center',gap:'8px',marginRight:'32px'}}>
-          <div style={{width:'22px',height:'22px',borderRadius:'6px',background:d?'#fff':'#191919',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:d?'#191919':'#fff'}}>H</div>
-          <span style={{fontSize:'13px',fontWeight:600}}>Mi Portal</span>
+          {brandingLogo
+            ?<img src={brandingLogo} alt="logo" style={{width:'26px',height:'26px',borderRadius:'6px',objectFit:'cover'}}/>
+            :<div style={{width:'26px',height:'26px',borderRadius:'6px',background:brandingColor,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff'}}>{brandingName.charAt(0).toUpperCase()}</div>
+          }
+          <span style={{fontSize:'13px',fontWeight:600}}>{brandingName}</span>
         </div>
         {(['home','new','tickets'] as View[]).concat(kbEnabled?['kb' as View]:[]).map(v=>{
           const labels:Record<string,string>={home:'Inicio',new:'Nuevo ticket',tickets:'Mis tickets',kb:'Ayuda'}

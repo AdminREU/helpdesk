@@ -14,10 +14,18 @@ export default function LoginPage() {
   const [countdown, setCountdown] = useState(0)
   const [dark, setDark] = useState(false)
 
-  const APP = process.env.NEXT_PUBLIC_APP_NAME ?? 'Helpdesk'
+  const [brandingName, setBrandingName] = useState(process.env.NEXT_PUBLIC_APP_NAME ?? 'Helpdesk')
+  const [brandingLogo, setBrandingLogo] = useState('')
+  const [brandingColor, setBrandingColor] = useState('#3b82f6')
 
   useEffect(() => {
     setDark(window.matchMedia('(prefers-color-scheme: dark)').matches)
+    fetch('/api/branding').then(r => r.json()).then(b => {
+      if (b.ok) {
+        setBrandingName(b.name); setBrandingLogo(b.logoUrl); setBrandingColor(b.primaryColor)
+        document.title = b.name
+      }
+    }).catch(() => {})
     const stored = localStorage.getItem('auth_token') ?? document.cookie.match(/auth_token=([^;]+)/)?.[1]
     if (stored) {
       fetch('/api/auth/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: stored }) })
@@ -86,7 +94,7 @@ export default function LoginPage() {
     textAlign: step === 'code' ? 'center' : 'left',
   }
 
-  const primaryBtn = !sending ? 'linear-gradient(135deg,#3b82f6,#6366f1)' : (dark ? '#334155' : '#e5e4e0')
+  const primaryBtn = !sending ? brandingColor : (dark ? '#334155' : '#e5e4e0')
   const btnStyle: React.CSSProperties = {
     width: '100%', padding: '12px', fontSize: '14px', fontWeight: 600, borderRadius: '8px',
     border: 'none', cursor: sending ? 'not-allowed' : 'pointer', marginTop: '8px',
@@ -98,12 +106,11 @@ export default function LoginPage() {
       <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '18px', padding: '40px 36px', maxWidth: '400px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.12)' }}>
 
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'linear-gradient(135deg,#3b82f6,#6366f1)', margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#fff" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5z" />
-            </svg>
-          </div>
-          <h1 style={{ fontSize: '20px', fontWeight: 700, color: text, margin: '0 0 4px' }}>{APP}</h1>
+          {brandingLogo
+            ? <img src={brandingLogo} alt="logo" style={{ width: '56px', height: '56px', borderRadius: '14px', objectFit: 'cover', margin: '0 auto 14px', display: 'block' }}/>
+            : <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: brandingColor, margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 700, color: '#fff' }}>{brandingName.charAt(0).toUpperCase()}</div>
+          }
+          <h1 style={{ fontSize: '20px', fontWeight: 700, color: text, margin: '0 0 4px' }}>{brandingName}</h1>
           <p style={{ fontSize: '13px', color: muted, margin: 0 }}>
             {step === 'email' && 'Ingresa tu correo para recibir un código de acceso'}
             {step === 'code' && `Código enviado a ${email}`}
@@ -147,7 +154,7 @@ export default function LoginPage() {
               {countdown > 0
                 ? <span style={{ fontSize: '13px', color: muted }}>Reenviar en {countdown}s</span>
                 : <button type="button" onClick={() => { setStep('email'); setCode(''); setError('') }}
-                    style={{ fontSize: '13px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    style={{ fontSize: '13px', color: brandingColor, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                     Cambiar correo o reenviar
                   </button>
               }
