@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     setDark(window.matchMedia('(prefers-color-scheme: dark)').matches)
-    const stored = localStorage.getItem('hd_token') ?? document.cookie.match(/auth_token=([^;]+)/)?.[1]
+    const stored = localStorage.getItem('auth_token') ?? document.cookie.match(/auth_token=([^;]+)/)?.[1]
     if (stored) {
       fetch('/api/auth/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: stored }) })
         .then(r => r.json()).then(d => {
@@ -62,7 +62,7 @@ export default function LoginPage() {
       })
       const d = await r.json()
       if (!d.ok) throw new Error(d.error)
-      localStorage.setItem('hd_token', d.token)
+      localStorage.setItem('auth_token', d.token)
       document.cookie = `auth_token=${d.token}; path=/; max-age=${8 * 3600}`
       setStep('loading')
       router.replace(d.rol === 'USUARIO' ? '/portal' : '/helpdesk')
