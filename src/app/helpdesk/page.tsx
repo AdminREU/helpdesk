@@ -71,6 +71,10 @@ export default function HelpdeskPage(){
   const [brandingNameEdit,setBrandingNameEdit]=useState('')
   const [brandingColorEdit,setBrandingColorEdit]=useState('#3b82f6')
   const [uploadingLogo,setUploadingLogo]=useState(false)
+  const [retentionDays,setRetentionDays]=useState(90)
+  const [retentionDaysEdit,setRetentionDaysEdit]=useState(90)
+  const [purgeStats,setPurgeStats]=useState<{pendingTickets:number;pendingFiles:number;lastPurgeAt:string|null;lastPurgeStats:any}>({pendingTickets:0,pendingFiles:0,lastPurgeAt:null,lastPurgeStats:null})
+  const [purging,setPurging]=useState(false)
   const [clearOtpEmail,setClearOtpEmail]=useState('')
   const [catAreas,setCatAreas]=useState<string[]>([])
   const [catAlmacenes,setCatAlmacenes]=useState<string[]>([])
@@ -111,7 +115,7 @@ export default function HelpdeskPage(){
   },[])
 
   useEffect(()=>{loadBranding()},[])
-  useEffect(()=>{if(token){loadDashboard();loadCatalogs();loadFeatures();loadUsers();loadMyAgentInfo();loadAgents()}},[token])
+  useEffect(()=>{if(token){loadDashboard();loadCatalogs();loadFeatures();loadUsers();loadMyAgentInfo();loadAgents();loadPurgeInfo()}},[token])
   useEffect(()=>{if(!token)return;const t=setInterval(loadAgents,30000);return()=>clearInterval(t)},[token])
 
   const api=useCallback(async(path:string,method='GET',body?:any)=>{
@@ -278,6 +282,23 @@ export default function HelpdeskPage(){
   async function removeLogo(){
     await fetch('/api/branding/upload',{method:'DELETE',headers:{'Authorization':`Bearer ${token}`}})
     setBrandingLogo('');showMsg('Logo eliminado','ok')
+  }
+  async function loadPurgeInfo(){
+    const r=await api('/api/admin/purge-attachments')
+    if(r.ok){setPurgeStats({pendingTickets:r.pendingTickets,pendingFiles:r.pendingFiles,lastPurgeAt:r.lastPurgeAt,lastPurgeStats:r.lastPurgeStats});setRetentionDays(r.retentionDays);setRetentionDaysEdit(r.retentionDays)}
+  }
+  async function saveRetention(){
+    if(retentionDaysEdit<1)return
+    await api('/api/settings','PATCH',{key:'ATTACHMENT_RETENTION_DAYS',value:String(retentionDaysEdit)})
+    setRetentionDays(retentionDaysEdit);showMsg('Retención actualizada','ok');loadPurgeInfo()
+  }
+  async function runPurge(){
+    if(!confirm(`¿Purgar capturas de ${purgeStats.pendingTickets} tickets cerrados (${purgeStats.pendingFiles} archivos)?\n\nLos PDFs ya se enviaron por correo como respaldo.`))return
+    setPurging(true)
+    const r=await api('/api/admin/purge-attachments','POST')
+    if(r.ok){showMsg(`✓ ${r.filesDeleted} archivos purgados de ${r.ticketsAffected} tickets`,'ok');loadPurgeInfo()}
+    else showMsg(`Error: ${r.error}`,'err')
+    setPurging(false)
   }
   async function saveCat(key:string,value:any){const res=await api('/api/catalogs/update','PATCH',{key,value});if(res.ok)showMsg('Guardado','ok');else showMsg('Error','err');loadCatalogs()}
   async function addToArr(key:string,item:string,arr:string[],setter:any,inputSetter:any){if(!item.trim())return;const u=[...arr,item.trim()];await saveCat(key,u);setter(u);inputSetter('')}
@@ -764,6 +785,38 @@ export default function HelpdeskPage(){
                 </div>
                 <div style={{fontSize:'11px',color:muted,paddingTop:'4px'}}>Tamaño máx. del logo: 2MB. Formatos: PNG, JPG, SVG, WEBP.</div>
               </div>
+            </div>
+          </div>
+
+          {/* Retención de adjuntos */}
+          <div style={{background:surface,border:`1px solid ${border}`,borderRadius:'10px',padding:'20px',marginBottom:'16px'}}>
+            <div style={{fontSize:'13px',fontWeight:500,marginBottom:'4px'}}>Retención de capturas</div>
+            <div style={{fontSize:'11px',color:muted,marginBottom:'16px'}}>Las capturas de tickets cerrados se eliminan automáticamente. El ticket queda intacto y los PDFs ya están en tu correo como respaldo.</div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px',marginBottom:'16px'}}>
+              <div style={{padding:'14px',borderRadius:'8px',background:d?'#2f2f2f':'#f7f6f3'}}>
+                <div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Tickets en cola</div>
+                <div style={{fontSize:'22px',fontWeight:700,color:purgeStats.pendingTickets>0?'#f59e0b':text}}>{purgeStats.pendingTickets}</div>
+              </div>
+              <div style={{padding:'14px',borderRadius:'8px',background:d?'#2f2f2f':'#f7f6f3'}}>
+                <div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Archivos a purgar</div>
+                <div style={{fontSize:'22px',fontWeight:700,color:purgeStats.pendingFiles>0?'#f59e0b':text}}>{purgeStats.pendingFiles}</div>
+              </div>
+              <div style={{padding:'14px',borderRadius:'8px',background:d?'#2f2f2f':'#f7f6f3'}}>
+                <div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Última ejecución</div>
+                <div style={{fontSize:'13px',fontWeight:500,color:text}}>{purgeStats.lastPurgeAt?fmtDate(purgeStats.lastPurgeAt):'Nunca'}</div>
+                {purgeStats.lastPurgeStats&&<div style={{fontSize:'10px',color:muted,marginTop:'2px'}}>{purgeStats.lastPurgeStats.filesDeleted} archivos · {purgeStats.lastPurgeStats.ticketsAffected} tickets</div>}
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:'12px',alignItems:'flex-end',flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:'11px',color:muted,marginBottom:'4px'}}>Días de retención (tras cierre)</div>
+                <input type="number" min={1} max={3650} value={retentionDaysEdit} onChange={e=>setRetentionDaysEdit(parseInt(e.target.value)||0)} style={{...inp,width:'120px'}}/>
+              </div>
+              <button style={btn} onClick={saveRetention} disabled={retentionDaysEdit===retentionDays}>Guardar retención</button>
+              <button style={{...btnDanger,padding:'8px 16px'}} onClick={runPurge} disabled={purging||purgeStats.pendingFiles===0}>{purging?'Purgando…':`Purgar ahora (${purgeStats.pendingFiles})`}</button>
+              <div style={{fontSize:'10px',color:muted,marginLeft:'auto',alignSelf:'center'}}>Job automático: diario 03:00 CDMX</div>
             </div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}}>
